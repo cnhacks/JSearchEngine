@@ -44,7 +44,6 @@ class DataBase(object):
 		try:
 			c.execute('create database if not exists %s DEFAULT CHARACTER SET utf8 COLLATE utf8_bin' % (self.DataBaseName))
 			self.DataConn.select_db(self.DataBaseName)
-			c.execute("create table LinkFactory(Link Text);")
 			c.execute("create table Link(Title Text, Link Text, Date Text);")
 		except Exception, e:
 			print "[E]->Class->DataBase->Create:%s" % (e)
@@ -58,7 +57,6 @@ class DataBase(object):
 		try:
 			self.DataConn.select_db(self.DataBaseName)
 			print "[I]Drop table LinkFactory, Drop table Link."
-			c.execute("drop table if exists LinkFactory")
 			c.execute("drop table if exists Link")
 			#得自行删除数据库，否则某些情况MySQL会卡机
 			#c.execute('drop database if exists %s' % (self.DataBaseName))
@@ -72,53 +70,33 @@ class DataBase(object):
 	def LinkFactoryGet(self):
 		c = self.DataConn.cursor()
 		try:
-			sql = "select * from LinkFactory;"
+			sql = "select * from Link where Title='';"
 			c.execute(sql)
-			print sql;
 			return c.fetchone()
+
 		except Exception, e:
 			print "[E]->Class->DataBase->LinkFactoryGet:" + str(e)
 
-	def LinkFactoryDel(self, link):
+	def LinkDel(self, link):
 		c = self.DataConn.cursor()
 		try:
-			sql = "delete from LinkFactory where Link='%s';" % (link)
+			sql = "delete from Link where Link='%s';" % (link)
 			c.execute(sql)
 		except Exception, e:
-			print "[E]->Class->DataBase->LinkFactoryDel:" + str(e)
+			print "[E]->Class->DataBase->LinkDel:" + str(e)
 
 		c.close()
 		self.DataConn.commit()
 
-	def LinkFactoryInsert(self, link):
+	def LinkInsert(self, link):
 		c = self.DataConn.cursor()
-		try:
-			sql = "select * from LinkFactory where Link='%s';" % (link)
-			c.execute(sql)
-			if c.fetchone() == None:
-				sql = "select * from Link where Link='%s';" % (link)
-				c.execute(sql)
-				if c.fetchone() == None:
-					sql = "insert into LinkFactory values('%s');" % (link)
-					print sql
-					c.execute(sql)
-
-		except Exception, e:
-			print "[E]->Class->DataBase->InsertLinkFactory:" + str(e)
-
-		c.close()
-		self.DataConn.commit()
-		return;
-
-	def LinkInsert(self, title, link, dateTime):
-		c = self.DataConn.cursor()
-		#print "LinkInsert,title:%s,link:%s,dateTime:%s" %(title, link, dateTime)
 		try:
 			sql = "select * from Link where Link='%s';" % (link)
 			c.execute(sql)
 			if c.fetchone() == None:
-				sql = "insert into Link values('%s','%s','%s');" % (title, link, dateTime)
+				sql = "insert into Link values('', '%s', '');" % (link)
 				c.execute(sql)
+				print sql
 
 		except Exception, e:
 			print "[E]->Class->DataBase->LinkInsert:" + str(e)
@@ -126,6 +104,37 @@ class DataBase(object):
 		c.close()
 		self.DataConn.commit()
 		return;
+
+	def LinkUpdate(self, title, date, link):
+		c = self.DataConn.cursor()
+		try:
+			sql = "update Link SET Title='%s',Date='%s' where Link='%s';" % (title, date, link)
+			c.execute(sql)
+			print sql
+
+		except Exception, e:
+			print "[E]->Class->DataBase->LinkUpdate:" + str(e)
+
+		c.close()
+		self.DataConn.commit()
+		return;
+
+	# def LinkInsert(self, title, link, dateTime):
+	# 	c = self.DataConn.cursor()
+	# 	#print "LinkInsert,title:%s,link:%s,dateTime:%s" %(title, link, dateTime)
+	# 	try:
+	# 		sql = "select * from Link where Link='%s';" % (link)
+	# 		c.execute(sql)
+	# 		if c.fetchone() == None:
+	# 			sql = "insert into Link values('%s','%s','%s');" % (title, link, dateTime)
+	# 			c.execute(sql)
+
+	# 	except Exception, e:
+	# 		print "[E]->Class->DataBase->LinkInsert:" + str(e)
+
+	# 	c.close()
+	# 	self.DataConn.commit()
+	# 	return;
 
 	def LinkSearch(self, title):
 		c = self.DataConn.cursor()
@@ -155,22 +164,10 @@ class LinkFactory(object):
 	def __init__(self, dataBase):
 		self.MyDataBase = dataBase
 
-	def Add(self, link):
-		self.MyDataBase.LinkFactoryInsert(link)
-
-	def IsHaveWork(self):
-		link = self.MyDataBase.LinkFactoryGet()
-		print link
-		if link != None:
-			return True
-		else:
-			return False
-
 	def Get(self):
 		link = self.MyDataBase.LinkFactoryGet()
 		if link != None:
-			self.MyDataBase.LinkFactoryDel(link)
-			return link[0]
+			return link[1]
 		else:
 			return None
 
@@ -272,14 +269,20 @@ class Crawler(object):
 		myDataBase.Connect()
 		for url in urls:
 			self.ThreadLock.acquire()
-			myLinkFactory.Add(url)
+			myDataBase.LinkInsert(url)
+			#myLinkFactory.Add(url)
 			self.ThreadLock.release()
 
 		return;
 
 	def RunWork(self):
+
+		myDataBase = DataBase(self.TargetHost)
+		myLinkFactory = LinkFactory(myDataBase)
+		myDataBase.Connect()
+
 		while True:
-			link = self.MyLinkFactory.Get()
+			link = myLinkFactory.Get()
 
 			if link == None:
 				break
@@ -290,15 +293,18 @@ class Crawler(object):
 				htmlText = self.GetHtmlText(link)
 				htmlText = self.ToUtf8(htmlText)
 				soup = BeautifulSoup(htmlText, from_encoding="utf8")
-				docTitle = ''
+				docTitle = '404 - Not Found'
 
 				try:
 					docTitle = soup.title.string
+					print docTitle
+
 				except Exception, e:
-					pass
+					print "[E]soup.title.string:" + link 
 				
 				timeText = time.strftime('%Y-%m-%d',time.localtime(time.time()))
-				self.MyDataBase.LinkInsert(docTitle, link, timeText)
+				myDataBase.LinkUpdate(docTitle, timeText, link)
+
 				tags = soup.findAll('a')
 				urls = [];
 				for tag in tags:
@@ -313,16 +319,23 @@ class Crawler(object):
 				t.start()
 
 
-				while len(urls) >= 1 and self.MyLinkFactory.IsHaveWork() == False:
-					self.MyDataBase.Connect()
+				while len(urls) >= 1 and myLinkFactory.Get() == None:
+					myDataBase.Connect()
 					print "Not Have work..."
 					time.sleep(1)
+
+				if self.ThreadTotal < 3:
+					self.ThreadTotal += 1
+					t = threading.Thread(target=self.RunWork,args=())
+					t.setDaemon(True)
+					t.start()
 
 				#for url in urls:
 				#	self.MyLinkFactory.Add(url)
 
 			except urllib2.HTTPError,e:
-					print "[E]->HTTP Error:%s,Link::%s" % (e, link)
+					myDataBase.LinkDel(link)
+					print "[E]->HTTP Error:%s,Link:%s" % (e, link)
 
 			#break;
 
@@ -341,7 +354,7 @@ class Crawler(object):
 		self.MyDataBase.Remove()
 		self.MyDataBase.Create()
 		self.MyDataBase.Connect()
-		self.MyLinkFactory.Add("http://" + self.TargetHost)
+		self.MyDataBase.LinkInsert("http://" + self.TargetHost)
 		print "[I]New work:" + "http://" + self.TargetHost
 		self.RunWork()
 		return;
