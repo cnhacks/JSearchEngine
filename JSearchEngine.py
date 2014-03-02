@@ -2,7 +2,11 @@
 #-*-coding:utf-8-*-
 # JSearchEngine
 # Author: Jam <810441377@qq.com>
+# Git: https://github.com/codejam1024/JSearchEngine
 # -------//-------//----
+# TODO:
+#	1.线程太过粗糙,待优化
+
 import os
 import sys
 import cgi
