@@ -44,7 +44,7 @@ class DataBase(object):
 		try:
 			c.execute('create database if not exists %s DEFAULT CHARACTER SET utf8 COLLATE utf8_bin' % (self.DataBaseName))
 			self.DataConn.select_db(self.DataBaseName)
-			c.execute("create table Link(Title Text, Link Text, Date Text);")
+			c.execute("create table Link(Title Text, Link Text, Date Text, Status Text);")
 		except Exception, e:
 			print "[E]->Class->DataBase->Create:%s" % (e)
 
@@ -67,15 +67,56 @@ class DataBase(object):
 		c.close()
 		self.DataConn.commit()
 
-	def LinkFactoryGet(self):
+	def LinkIsHaveWork(self):
 		c = self.DataConn.cursor()
 		try:
-			sql = "select * from Link where Title='';"
+			sql = "select * from Link where Status='work';"
 			c.execute(sql)
-			return c.fetchone()
+			link = c.fetchone()
+			c.close()
+			if link != None:
+				return True
+			else:
+				return False
 
 		except Exception, e:
-			print "[E]->Class->DataBase->LinkFactoryGet:" + str(e)
+			print "[E]->Class->DataBase->LinkIsHaveWork:" + str(e)
+
+		c.close()
+
+	def LinkStatusGet(self, link):
+		c = self.DataConn.cursor()
+		try:
+			sql = "select * from Link where Link='%s';" % (link)
+			c.execute(sql)
+			link = c.fetchone()
+			c.close()
+			if link != None:
+				return link[3]
+			else:
+				return None
+
+		except Exception, e:
+			print "[E]->Class->DataBase->LinkStatusGet:" + str(e)
+
+		c.close()
+
+	def LinkUnreadGet(self):
+		c = self.DataConn.cursor()
+		try:
+			sql = "select * from Link where Status='unread';"
+			c.execute(sql)
+			link = c.fetchone()
+			c.close()
+			if link != None:
+				return link[1]
+			else:
+				return None
+
+		except Exception, e:
+			print "[E]->Class->DataBase->LinkUnreadGet:" + str(e)
+
+		c.close()
 
 	def LinkDel(self, link):
 		c = self.DataConn.cursor()
@@ -85,8 +126,8 @@ class DataBase(object):
 		except Exception, e:
 			print "[E]->Class->DataBase->LinkDel:" + str(e)
 
-		c.close()
 		self.DataConn.commit()
+		c.close()
 
 	def LinkInsert(self, link):
 		c = self.DataConn.cursor()
@@ -94,47 +135,48 @@ class DataBase(object):
 			sql = "select * from Link where Link='%s';" % (link)
 			c.execute(sql)
 			if c.fetchone() == None:
-				sql = "insert into Link values('', '%s', '');" % (link)
+				sql = "insert into Link values('', '%s', '', 'unread');" % (link)
 				c.execute(sql)
-				print sql
+				c.close()
+				#print sql
+			else:
+				return False
 
 		except Exception, e:
 			print "[E]->Class->DataBase->LinkInsert:" + str(e)
+			return False
 
-		c.close()
 		self.DataConn.commit()
-		return;
+		c.close()
+		return True;
 
-	def LinkUpdate(self, title, date, link):
+	def LinkUpdate(self, link, title, date, status):
 		c = self.DataConn.cursor()
 		try:
-			sql = "update Link SET Title='%s',Date='%s' where Link='%s';" % (title, date, link)
+			sql = "update Link SET Title='%s',Date='%s',Status='%s' where Link='%s';" % (title, date, status, link)
 			c.execute(sql)
 			print sql
 
 		except Exception, e:
 			print "[E]->Class->DataBase->LinkUpdate:" + str(e)
 
+		self.DataConn.commit()
+		c.close()
+		return;
+
+	def LinkUpdateWork(self):
+		c = self.DataConn.cursor()
+		try:
+			sql = "update Link SET Status='unread' where Status='work';"
+			c.execute(sql)
+			print sql
+
+		except Exception, e:
+			print "[E]->Class->DataBase->LinkUpdateWork:" + str(e)
+
 		c.close()
 		self.DataConn.commit()
 		return;
-
-	# def LinkInsert(self, title, link, dateTime):
-	# 	c = self.DataConn.cursor()
-	# 	#print "LinkInsert,title:%s,link:%s,dateTime:%s" %(title, link, dateTime)
-	# 	try:
-	# 		sql = "select * from Link where Link='%s';" % (link)
-	# 		c.execute(sql)
-	# 		if c.fetchone() == None:
-	# 			sql = "insert into Link values('%s','%s','%s');" % (title, link, dateTime)
-	# 			c.execute(sql)
-
-	# 	except Exception, e:
-	# 		print "[E]->Class->DataBase->LinkInsert:" + str(e)
-
-	# 	c.close()
-	# 	self.DataConn.commit()
-	# 	return;
 
 	def LinkSearch(self, title):
 		c = self.DataConn.cursor()
@@ -156,20 +198,6 @@ class DataBase(object):
 		self.DataConn.close()
 
 
-################################################################
-#LinkFactory Class, 链接工厂类, 可以将要工作的链接放入流水线，也可以获取流水线上的链接
-class LinkFactory(object):
-	Host = ""
-	MyDataBase = DataBase
-	def __init__(self, dataBase):
-		self.MyDataBase = dataBase
-
-	def Get(self):
-		link = self.MyDataBase.LinkFactoryGet()
-		if link != None:
-			return link[1]
-		else:
-			return None
 
 ###############################################################
 #爬虫类，爬虫的一些操作都在这里执行
@@ -181,13 +209,13 @@ class Crawler(object):
 	UserAgent  = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/33.0.1750.117 Safari/537.36'
 	BadFilterRules  = ['#', '.jpeg','.jpg','.rar','.png','.zip','.rar','.7z','javascript:','mailto:']
 
-	ThreadMax   = 15 # 最大线程
+	ThreadMax   = 25 # 最大线程
 	ThreadLock  = threading.Lock()
 	ThreadTotal = 0
 	ThreadSignal = ""
+	MyDataBase   = DataBase
 
-	MyDataBase    = DataBase   
-	MyLinkFactory = LinkFactory
+	def AnalyzePage():return; # 预定义函数,以便在该函数前面的函数调用该函数
 
 	def __init__(self, host):
 		self.TargetHost = host
@@ -243,6 +271,11 @@ class Crawler(object):
 					#print "!!! Fuck->Host:%s,Url:%s" % (urlHost, url)
 					isBadUrl = True
 
+			#链接是否超长
+			if len(url) >= 200:
+				isBadUrl = True
+
+
 			#进行过滤规则筛选
 			for rule in self.BadFilterRules:
 				if url_lower.find(rule) != -1: 
@@ -262,98 +295,129 @@ class Crawler(object):
 		
 		return returnUrls
 
+	def ThreadOpen(self, func, argv):
+		while self.ThreadTotal >= self.ThreadMax:
+			time.sleep(2)
+
+		self.ThreadLock.acquire()
+		self.ThreadTotal += 1
+		self.ThreadLock.release()
+		t = threading.Thread(target=func,args=(argv,))
+		t.setDaemon(True)
+		t.start()
+		time.sleep(1)
+
 	def AddUrls(self, urls):
-		print "Thread AddUrls..."
 		myDataBase = DataBase(self.TargetHost)
-		myLinkFactory = LinkFactory(myDataBase)
 		myDataBase.Connect()
 		for url in urls:
-			self.ThreadLock.acquire()
-			myDataBase.LinkInsert(url)
-			#myLinkFactory.Add(url)
-			self.ThreadLock.release()
+			isOk = myDataBase.LinkInsert(url)
+			if isOk:
+				if self.ThreadTotal < self.ThreadMax:
+					self.ThreadOpen(self.AnalyzePage, url)
 
 		return;
+
+
+	def AnalyzePage(self, link):
+		print "[I]AnalyzePage:" + link
+		myDataBase = DataBase(self.TargetHost)
+		myDataBase.Connect()
+		myDataBase.LinkUpdate(link,'','','work')
+
+		try:
+			htmlText = self.GetHtmlText(link)
+			htmlText = self.ToUtf8(htmlText)
+			soup = BeautifulSoup(htmlText, from_encoding="utf8")
+			docTitle = '404 - Not Found'
+
+			try:
+				docTitle = soup.title.string
+
+			except Exception, e:
+				print "[E]soup.title.string:" + link
+
+			
+			
+			tags = soup.findAll('a')
+			urls = [];
+			for tag in tags:
+				url = tag.get('href','')
+				if url!= '' : urls.append(url)
+
+			urls = self.UrlFilter(self.TargetHost, urls)
+			print "Links length:%s" % (len(urls))
+
+			self.AddUrls(urls)
+
+			timeText = time.strftime('%Y-%m-%d',time.localtime(time.time()))
+			myDataBase.LinkUpdate(link, docTitle, timeText, "ok")
+
+		except urllib2.HTTPError,e:
+			myDataBase.Connect()
+			myDataBase.LinkDel(link)
+			print "[E]->HTTP Error:%s,Link:%s" % (e, link)
+
+		self.ThreadLock.acquire()
+		self.ThreadTotal -= 1
+		self.ThreadLock.release()
+		print "[I]ThreadTotal:%s" % (self.ThreadTotal)
+
 
 	def RunWork(self):
 
 		myDataBase = DataBase(self.TargetHost)
-		myLinkFactory = LinkFactory(myDataBase)
 		myDataBase.Connect()
 
 		while True:
-			link = myLinkFactory.Get()
+			myDataBase.Connect()
+			self.ThreadLock.acquire()
+			link = myDataBase.LinkUnreadGet()
+			self.ThreadLock.release()
 
 			if link == None:
-				break
-			else:
-				print "[G]Link:" + link
-
-			try:
-				htmlText = self.GetHtmlText(link)
-				htmlText = self.ToUtf8(htmlText)
-				soup = BeautifulSoup(htmlText, from_encoding="utf8")
-				docTitle = '404 - Not Found'
-
-				try:
-					docTitle = soup.title.string
-					print docTitle
-
-				except Exception, e:
-					print "[E]soup.title.string:" + link 
 				
-				timeText = time.strftime('%Y-%m-%d',time.localtime(time.time()))
-				myDataBase.LinkUpdate(docTitle, timeText, link)
-
-				tags = soup.findAll('a')
-				urls = [];
-				for tag in tags:
-					url = tag.get('href','')
-					if url!= '' : urls.append(url)
-
-				urls = self.UrlFilter(self.TargetHost, urls)
-				print "Links length:%s" % (len(urls))
-
-				t = threading.Thread(target=self.AddUrls,args=(urls,))
-				t.setDaemon(True)
-				t.start()
-
-
-				while len(urls) >= 1 and myLinkFactory.Get() == None:
+				self.ThreadLock.acquire()
+				if myDataBase.LinkIsHaveWork() == False:
+					self.ThreadLock.release()
+					print "No task."
+					break
+				else:
+					self.ThreadLock.release()
+					print "Wait task. ThreadTotal:%s" % (self.ThreadTotal)
+					time.sleep(2)
+					continue
+				
+				
+			else:
+				while True:
 					myDataBase.Connect()
-					print "Not Have work..."
+					self.ThreadOpen(self.AnalyzePage, link)
+					self.ThreadLock.acquire()
+					status = myDataBase.LinkStatusGet(link)
+					self.ThreadLock.release()
+					
+					if status != 'unread':
+						print "Work Get:" + link
+						break
+
 					time.sleep(1)
-
-				if self.ThreadTotal < 3:
-					self.ThreadTotal += 1
-					t = threading.Thread(target=self.RunWork,args=())
-					t.setDaemon(True)
-					t.start()
-
-				#for url in urls:
-				#	self.MyLinkFactory.Add(url)
-
-			except urllib2.HTTPError,e:
-					myDataBase.LinkDel(link)
-					print "[E]->HTTP Error:%s,Link:%s" % (e, link)
-
-			#break;
-
+					print "Wait,status:" + status 
 		return;
 
 	def Work(self):
 		self.MyDataBase = DataBase(self.TargetHost)
-		self.MyLinkFactory = LinkFactory(self.MyDataBase)
 		self.MyDataBase.Connect()
+		self.MyDataBase.LinkUpdateWork()
 		self.RunWork()
 		return;
 
 	def NewWork(self):
 		self.MyDataBase = DataBase(self.TargetHost)
-		self.MyLinkFactory = LinkFactory(self.MyDataBase)
 		self.MyDataBase.Remove()
 		self.MyDataBase.Create()
 		self.MyDataBase.Connect()
+		self.MyDataBase.LinkUpdateWork()
 		self.MyDataBase.LinkInsert("http://" + self.TargetHost)
 		print "[I]New work:" + "http://" + self.TargetHost
 		self.RunWork()
